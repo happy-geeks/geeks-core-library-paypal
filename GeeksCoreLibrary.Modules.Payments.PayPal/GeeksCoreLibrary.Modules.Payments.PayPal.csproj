@@ -11,11 +11,8 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="GeeksCoreLibrary" Version="4.0.1" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <Folder Include="Models\" />
+      <ProjectReference Include="..\..\geeks-core-library-onebip\GeeksCoreLibrary.Modules.Payments.OneBip\GeeksCoreLibrary.Modules.Payments.OneBip.csproj" />
+      <ProjectReference Include="..\..\geeks-core-library\GeeksCoreLibrary\GeeksCoreLibrary.csproj" />
     </ItemGroup>
 
 
