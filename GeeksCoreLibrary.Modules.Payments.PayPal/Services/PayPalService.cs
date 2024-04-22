@@ -12,7 +12,6 @@ using GeeksCoreLibrary.Modules.Objects.Interfaces;
 using GeeksCoreLibrary.Modules.Payments.Enums;
 using GeeksCoreLibrary.Modules.Payments.Interfaces;
 using GeeksCoreLibrary.Modules.Payments.Models;
-using GeeksCoreLibrary.Modules.Payments.OneBip.Models;
 using GeeksCoreLibrary.Modules.Payments.PayPal.Models;
 using GeeksCoreLibrary.Modules.Payments.Services;
 using Microsoft.AspNetCore.Http;
@@ -28,7 +27,6 @@ namespace GeeksCoreLibrary.Modules.Payments.PayPal.Services;
 /// <inheritdoc cref="IPaymentServiceProviderService" />
 public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceProviderService, IScopedService
 {
-    private const string BaseUrl = "https://api-m.sandbox.paypal.com/";
     private readonly IDatabaseConnection databaseConnection;
     private readonly ILogger<PaymentServiceProviderBaseService> logger;
     private readonly IHttpContextAccessor httpContextAccessor;
@@ -36,12 +34,12 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
     private readonly IShoppingBasketsService shoppingBasketsService;
     private readonly IWiserItemsService wiserItemsService;
     private readonly IObjectsService objectsService;
+    private string webHookContents = null;
+    private OrderWebhookModel? webhookData = null;
+    private string webhookId = null;
+    private string baseUrl = null;
 
-    private string WebHookContents = null;
-    private OrderWebhookModel WebhookData = null;
-    private string WebhookId = null;
-
-    private readonly JsonSerializerSettings jsonSerializerSettings = new JsonSerializerSettings
+    private readonly JsonSerializerSettings? jsonSerializerSettings = new JsonSerializerSettings
     {
         NullValueHandling = NullValueHandling.Ignore
     };
@@ -69,93 +67,200 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
     public async Task<PaymentRequestResult> HandlePaymentRequestAsync(ICollection<(WiserItemModel Main, List<WiserItemModel> Lines)> conceptOrders, WiserItemModel userDetails,
         PaymentMethodSettingsModel paymentMethodSettings, string invoiceNumber)
     {
-        var payPalSettings = (PayPalSettingsModel)paymentMethodSettings.PaymentServiceProvider;
-        var validationResult = ValidatePayPalSettings(payPalSettings);
-        if (!validationResult.Valid)
+        var failUrl = "";
+        try
         {
-            logger.LogError("Validation in 'HandlePaymentRequestAsync' of 'PayPalService' failed because: {Message}", validationResult.Message);
+            var payPalSettings = (PayPalSettingsModel)paymentMethodSettings.PaymentServiceProvider;
+            var validationResult = ValidatePayPalSettings(payPalSettings);
+            failUrl = payPalSettings.FailUrl;
+            if (!validationResult.Valid)
+            {
+                logger.LogError("Validation in 'HandlePaymentRequestAsync' of 'PayPalService' failed because: {Message}", validationResult.Message);
+                return new PaymentRequestResult
+                {
+                    Successful = false,
+                    Action = PaymentRequestActions.Redirect,
+                    ActionData = failUrl
+                };
+            }
+        
+            // Build and execute payment request.
+            baseUrl = gclSettings.Environment.InList(Environments.Development, Environments.Test) ? "https://api-m.sandbox.paypal.com/" : "https://api-m.paypal.com/";
+            var restClient = CreateRestClient(payPalSettings, baseUrl);
+            var restRequest = await CreateRestRequestAsync(payPalSettings, invoiceNumber, conceptOrders);
+            restRequest.AddHeader("Content-Type", "application/json");
+            var restResponse = await restClient.ExecuteAsync(restRequest);
+            if (restResponse.Content == null)
+            {
+                return new PaymentRequestResult
+                {
+                    Successful = false,
+                    Action = PaymentRequestActions.Redirect,
+                    ErrorMessage = "No response received from the PayPal",
+                    ActionData = failUrl
+                };
+            }
+            var payPalResponse = JsonConvert.DeserializeObject<OrderResponseModel>(restResponse.Content, jsonSerializerSettings);
+            var responseSuccessful = restResponse.StatusCode == HttpStatusCode.OK;
+            if (payPalResponse == null)
+            {
+                return new PaymentRequestResult
+                {
+                    Successful = false,
+                    Action = PaymentRequestActions.Redirect,
+                    ErrorMessage = "No response received from PayPal.",
+                    ActionData = failUrl
+                };
+            }
+
+            foreach (var conceptOrder in conceptOrders)
+            {
+                conceptOrder.Main.SetDetail(OrderProcessConstants.PaymentProviderTransactionId, payPalResponse.Id);
+                await wiserItemsService.SaveAsync(conceptOrder.Main, skipPermissionsCheck: true);
+            }
+
+            var payerActionLink = payPalResponse.Links.FirstOrDefault(link => string.Equals(link.Rel, "payer-action", StringComparison.OrdinalIgnoreCase));
+            return new PaymentRequestResult
+            {
+                Successful = responseSuccessful,
+                Action = PaymentRequestActions.Redirect,
+                ErrorMessage = "No response received from PayPal.",
+                ActionData = (responseSuccessful) ? payerActionLink?.Href : payPalSettings.FailUrl
+            };
+        }
+        catch (Exception exception)
+        {
+            // Log any exceptions that may have occurred.
+            logger.LogError(exception, "Error handling PayPal payment request");
             return new PaymentRequestResult
             {
                 Successful = false,
                 Action = PaymentRequestActions.Redirect,
-                ActionData = payPalSettings.FailUrl
+                ActionData = failUrl
             };
         }
-        
-        // Build and execute payment request.
-        var restClient = CreateRestClient(payPalSettings);
-        var restRequest = await CreateRestRequestAsync(payPalSettings, invoiceNumber, conceptOrders);
-        restRequest.AddHeader("Content-Type", "application/json");
-        var restResponse = await restClient.ExecuteAsync(restRequest);
-        var payPalResponse = JsonConvert.DeserializeObject<OrderResponseModel>(restResponse.Content, jsonSerializerSettings);
-        var responseSuccessful = restResponse.StatusCode == HttpStatusCode.OK;
-
-        foreach (var conceptOrder in conceptOrders)
-        {
-            conceptOrder.Main.SetDetail(OrderProcessConstants.PaymentProviderTransactionId, payPalResponse.Id);
-            await wiserItemsService.SaveAsync(conceptOrder.Main, skipPermissionsCheck: true);
-        }
-        
-        var payerActionLink = payPalResponse.Links.FirstOrDefault(link => string.Equals(link.Rel, "payer-action", StringComparison.OrdinalIgnoreCase));
-        return new PaymentRequestResult
-        {
-            Successful = responseSuccessful,
-            Action = PaymentRequestActions.Redirect,
-            ActionData = (responseSuccessful) ? payerActionLink.Href :  payPalSettings.FailUrl 
-        };
     }
 
     /// <inheritdoc />
     public async Task<StatusUpdateResult> ProcessStatusUpdateAsync(OrderProcessSettingsModel orderProcessSettings, PaymentMethodSettingsModel paymentMethodSettings)
     {
-        if (httpContextAccessor?.HttpContext == null)
+        var error = "";
+        var statusCode = 0;
+        var responseBody = "";
+        try
         {
+            if (httpContextAccessor?.HttpContext == null)
+            {
+                error = "No HTTP context available; unable to process status update.";
+                return new StatusUpdateResult
+                {
+                    Successful = false,
+                    Status = error,
+                    StatusCode = statusCode
+                };
+            }
+            
+            var paypalVerifyRequestJsonString = $@"{{
+		        ""transmission_id"": ""{httpContextAccessor.HttpContext.Request.Headers["PAYPAL-TRANSMISSION-ID"].ToString()}"",
+		        ""transmission_time"": ""{httpContextAccessor.HttpContext.Request.Headers["PAYPAL-TRANSMISSION-TIME"].ToString()}"",
+		        ""cert_url"": ""{httpContextAccessor.HttpContext.Request.Headers["PAYPAL-CERT-URL"].ToString()}"",
+		        ""auth_algo"": ""{httpContextAccessor.HttpContext.Request.Headers["PAYPAL-AUTH-ALGO"].ToString()}"",
+		        ""transmission_sig"": ""{httpContextAccessor.HttpContext.Request.Headers["PAYPAL-TRANSMISSION-SIG"].ToString()}"",
+		        ""webhook_id"": ""{webhookId}"",
+		        ""webhook_event"": {webHookContents}
+	        }}";
+            
+            var payPalSettings = (PayPalSettingsModel)paymentMethodSettings.PaymentServiceProvider;
+            if (string.IsNullOrEmpty(baseUrl))
+            {
+                baseUrl = gclSettings.Environment.InList(Environments.Development, Environments.Test) ? "https://api-m.sandbox.paypal.com" : "https://api-m.paypal.com";
+            }
+            var restClient = CreateRestClient(payPalSettings, baseUrl);
+            var restRequest = new RestRequest("/v1/notifications/verify-webhook-signature", Method.Post);
+            restRequest.AddParameter("application/json", paypalVerifyRequestJsonString, ParameterType.RequestBody);
+            var restResponse = await restClient.ExecuteAsync(restRequest);
+            statusCode = (int)restResponse.StatusCode;
+            responseBody = restResponse.Content;
+        
+            if (String.IsNullOrEmpty(responseBody))
+            {
+                error = "No response received from PayPal.";
+                return new StatusUpdateResult
+                {
+                    Successful = false,
+                    Status = error,
+                    StatusCode = statusCode
+                };
+            }
+
+            if (restResponse.StatusCode != HttpStatusCode.OK && restResponse.StatusCode != HttpStatusCode.Created && restResponse.StatusCode != HttpStatusCode.NoContent)
+            {
+                error = "Failed to verify webhook response, because Paypal API returned an error.";
+                return new StatusUpdateResult
+                {
+                    Successful = false,
+                    Status = error,
+                    StatusCode = statusCode
+                };
+            }
+
+            var responseJson = JsonConvert.DeserializeObject<VerifyWebhookResponseModel>(responseBody, jsonSerializerSettings);
+            if (responseJson?.VerificationStatus != "SUCCESS")
+            {
+                error = "Invalid webhook.";
+                return new StatusUpdateResult
+                {
+                    Successful = false,
+                    Status = error,
+                    StatusCode = statusCode
+                };
+            }
+
+            if (webhookData == null)
+            {
+                error = "No webhook data available.";
+                return new StatusUpdateResult
+                {
+                    Successful = false,
+                    Status = error,
+                    StatusCode = statusCode
+                };
+            }
+
+            if (webhookData.ResourceType != "checkout-order")
+            {
+                error = "Webhook resource type is not checkout-order. Other types are not supported.";
+                return new StatusUpdateResult
+                {
+                    Successful = false,
+                    Status = error,
+                    StatusCode = statusCode
+                };
+            }
+            
+            return new StatusUpdateResult
+            {
+                Successful = responseJson.VerificationStatus.Equals("SUCCESS", StringComparison.OrdinalIgnoreCase),
+                Status = responseJson.VerificationStatus
+            };
+        }
+        catch (Exception exception)
+        {
+            error = exception.ToString();
+            // Log any exceptions that may have occurred.
+            logger.LogError(exception, "Error processing PayPal payment update.");
             return new StatusUpdateResult
             {
                 Successful = false,
-                Status = "Error retrieving status: No HttpContext available."
+                Status = "Error processing PayPal payment update.",
+                StatusCode = 500
             };
         }
-        
-        var paypalVerifyRequestJsonString = $@"{{
-				    ""transmission_id"": ""{httpContextAccessor.HttpContext.Request.Headers["PAYPAL-TRANSMISSION-ID"].ToString()}"",
-				    ""transmission_time"": ""{httpContextAccessor.HttpContext.Request.Headers["PAYPAL-TRANSMISSION-TIME"].ToString()}"",
-				    ""cert_url"": ""{httpContextAccessor.HttpContext.Request.Headers["PAYPAL-CERT-URL"].ToString()}"",
-				    ""auth_algo"": ""{httpContextAccessor.HttpContext.Request.Headers["PAYPAL-AUTH-ALGO"].ToString()}"",
-				    ""transmission_sig"": ""{httpContextAccessor.HttpContext.Request.Headers["PAYPAL-TRANSMISSION-SIG"].ToString()}"",
-				    ""webhook_id"": ""{WebhookId}"",
-				    ""webhook_event"": {WebHookContents}
-				}}";
-        
-        var payPalSettings = (PayPalSettingsModel)paymentMethodSettings.PaymentServiceProvider;
-        var restClient = CreateRestClient(payPalSettings);
-        var restRequest = new RestRequest("/v1/notifications/verify-webhook-signature", Method.Post);
-        restRequest.AddParameter("application/json", paypalVerifyRequestJsonString, ParameterType.RequestBody);
-        var restResponse = await restClient.ExecuteAsync(restRequest);
-        
-        if (restResponse.StatusCode != HttpStatusCode.OK && restResponse.StatusCode != HttpStatusCode.Created && restResponse.StatusCode != HttpStatusCode.NoContent)
+        finally
         {
-            throw new Exception("Failed to verify webhook response, because Paypal API returned an error.");
+            var invoiceNumber = webhookData?.Resource.PurchaseUnits.FirstOrDefault()?.InvoiceId;
+            await LogIncomingPaymentActionAsync(PaymentServiceProviders.PayPal, invoiceNumber, statusCode, responseBody: webHookContents, error: error);
         }
-        
-        var responseJson = JsonConvert.DeserializeObject<VerifyWebhookResponseModel>(restResponse.Content, jsonSerializerSettings);
-        if (responseJson?.VerificationStatus != "SUCCESS")
-        {
-            throw new Exception("Invalid webhook");
-        }
-
-        if (WebhookData.ResourceType != "checkout-order")
-        {
-            throw new Exception("Webhook resource type is not checkout-order. Other types are not supported.");
-        }
-        
-        var invoiceNumber = WebhookData.Resource.PurchaseUnits.FirstOrDefault()?.InvoiceId;
-        await LogIncomingPaymentActionAsync(PaymentServiceProviders.PayPal, invoiceNumber, (int)restResponse.StatusCode, responseBody: restResponse.Content);
-        return new StatusUpdateResult
-        {
-            Successful = responseJson.VerificationStatus.Equals("SUCCESS", StringComparison.OrdinalIgnoreCase),
-            Status = responseJson.VerificationStatus
-        };
     }
 
     /// <inheritdoc />
@@ -177,56 +282,83 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
         LEFT JOIN {WiserTableNames.WiserItemDetail} AS webhookIdLive ON webhookIdLive.item_id = paymentServiceProvider.id AND webhookIdLive.`key` = '{PayPalConstants.WebhookIdLive}'
         LEFT JOIN {WiserTableNames.WiserItemDetail} AS webhookIdTest ON webhookIdTest.item_id = paymentServiceProvider.id AND webhookIdTest.`key` = '{PayPalConstants.WebhookIdTest}'
         WHERE paymentServiceProvider.id = ?id";
+        
+        try
+        {
+            var result = new PayPalSettingsModel
+            {
+                Id = paymentServiceProviderSettings.Id,
+                Title = paymentServiceProviderSettings.Title,
+                Type = paymentServiceProviderSettings.Type,
+                LogAllRequests = paymentServiceProviderSettings.LogAllRequests,
+                OrdersCanBeSetDirectlyToFinished = paymentServiceProviderSettings.OrdersCanBeSetDirectlyToFinished,
+                SkipPaymentWhenOrderAmountEqualsZero = paymentServiceProviderSettings.SkipPaymentWhenOrderAmountEqualsZero
+            };
+            var dataTable = await databaseConnection.GetAsync(query);
 
-        var result = new PayPalSettingsModel
-        {
-            Id = paymentServiceProviderSettings.Id,
-            Title = paymentServiceProviderSettings.Title,
-            Type = paymentServiceProviderSettings.Type,
-            LogAllRequests = paymentServiceProviderSettings.LogAllRequests,
-            OrdersCanBeSetDirectlyToFinished = paymentServiceProviderSettings.OrdersCanBeSetDirectlyToFinished,
-            SkipPaymentWhenOrderAmountEqualsZero = paymentServiceProviderSettings.SkipPaymentWhenOrderAmountEqualsZero
-        };
-        var dataTable = await databaseConnection.GetAsync(query);
-        if (dataTable.Rows.Count == 0)
-        {
+            if (dataTable.Rows.Count == 0)
+            {
+                return result;
+            }
+            var row = dataTable.Rows[0];
+
+            var suffix = gclSettings.Environment.InList(Environments.Development, Environments.Test) ? "Test" : "Live";
+            result.ClientId = row.GetAndDecryptSecretKey($"payPalClientId{suffix}");
+            result.Secret = row.GetAndDecryptSecretKey($"payPalSecret{suffix}");
+            result.WebhookId = row.GetAndDecryptSecretKey($"webhookId{suffix}");
+            if (String.IsNullOrWhiteSpace(result.WebhookId))
+            {
+                throw new Exception("No PayPal webhook id found.");
+            }
+            webhookId = result.WebhookId;
             return result;
         }
-        var row = dataTable.Rows[0];
-
-        var suffix = gclSettings.Environment.InList(Environments.Development, Environments.Test) ? "Test" : "Live";
-        result.ClientId = row.GetAndDecryptSecretKey($"payPalClientId{suffix}");
-        result.Secret = row.GetAndDecryptSecretKey($"payPalSecret{suffix}");
-        result.WebhookId = row.GetAndDecryptSecretKey($"webhookId{suffix}");
-        if (String.IsNullOrWhiteSpace(result.WebhookId))
+        catch (Exception exception)
         {
-            throw new Exception("No PayPal webhook id found.");
+            logger.LogError(exception, "Error getting provider settings.");
+            throw;
         }
-        WebhookId = result.WebhookId;
-        return result;
     }
 
     /// <inheritdoc />
-    public string GetInvoiceNumberFromRequest()
+    public async Task<String> GetInvoiceNumberFromRequestAsync()
     {
-        using StreamReader reader = new(httpContextAccessor.HttpContext.Request.Body);
-        WebHookContents = reader.ReadToEndAsync().Result;
-        if (String.IsNullOrWhiteSpace(WebHookContents))
+        try
         {
-            throw new Exception("No JSON found in body of PayPal webhook.");
-        }
+            if (httpContextAccessor.HttpContext?.Request.Body == null)
+            {
+                throw new Exception("No HTTP context available.");
+            }
+            
+            using StreamReader reader = new(httpContextAccessor.HttpContext.Request.Body);
+            webHookContents = await reader.ReadToEndAsync();
+            if (String.IsNullOrWhiteSpace(webHookContents))
+            {
+                throw new Exception("No JSON found in body of PayPal webhook.");
+            }
 
-        WebhookData = JsonConvert.DeserializeObject<OrderWebhookModel>(WebHookContents, jsonSerializerSettings);
-        if (WebhookData == null)
+            webhookData = JsonConvert.DeserializeObject<OrderWebhookModel>(webHookContents, jsonSerializerSettings);
+            if (webhookData == null)
+            {
+                throw new Exception("Invalid JSON found in body of PayPal webhook.");
+            }
+            var invoiceId = webhookData.Resource.PurchaseUnits.FirstOrDefault()?.InvoiceId;
+            if (String.IsNullOrEmpty(invoiceId))
+            {
+                throw new Exception("No invoice id found in body of PayPal webhook.");
+            }
+            return invoiceId;
+        }
+        catch (Exception exception)
         {
-            throw new Exception("Invalid JSON found in body of PayPal webhook.");
+            logger.LogError(exception, "Error getting invoice number from request.");
+            throw;
         }
-
-        return WebhookData.Resource.PurchaseUnits.FirstOrDefault().InvoiceId;
     }
-    private static RestClient CreateRestClient(PayPalSettingsModel payPalSettings)
+    
+    private static RestClient CreateRestClient(PayPalSettingsModel payPalSettings, string baseUrl)
     {
-        return new RestClient(new RestClientOptions(BaseUrl)
+        return new RestClient(new RestClientOptions(baseUrl)
         {
             Authenticator = new HttpBasicAuthenticator(payPalSettings.ClientId, payPalSettings.Secret),
         });
@@ -242,7 +374,7 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
         return (true, null);
     }
     
-    private async Task<RestRequest> CreateRestRequestAsync( PayPalSettingsModel payPalSettings, string invoiceNumber, ICollection<(WiserItemModel Main, List<WiserItemModel> Lines)> conceptOrders)
+    private async Task<RestRequest> CreateRestRequestAsync(PayPalSettingsModel payPalSettings, string invoiceNumber, ICollection<(WiserItemModel Main, List<WiserItemModel> Lines)> conceptOrders)
     {
         var restRequest = new RestRequest("/v2/checkout/orders", Method.Post);
         var payPalCreateOrderRequest = new OrderRequestModel
@@ -258,9 +390,7 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
                         GivenName = conceptOrders.FirstOrDefault().Main.GetDetailValue<string>(PayPalConstants.GivenName),
                         Surname = conceptOrders.FirstOrDefault().Main.GetDetailValue<string>(PayPalConstants.Surname)
                     },
-                    BirthDate = conceptOrders.FirstOrDefault().Main.GetDetailValue<DateTime>(PayPalConstants.BirthDate) == DateTime.MinValue
-                            ? conceptOrders.FirstOrDefault().Main.GetDetailValue<DateTime>(PayPalConstants.BirthDate)
-                            : null,
+                    BirthDate = conceptOrders.FirstOrDefault().Main.GetDetailValue<DateTime>(PayPalConstants.BirthDate) == DateTime.MinValue ? conceptOrders.FirstOrDefault().Main.GetDetailValue<DateTime>(PayPalConstants.BirthDate) : null,
                     ExperienceContext = new ExperienceContextModel
                     {
                         BrandName = await objectsService.FindSystemObjectByDomainNameAsync("PayPal_BrandName", searchFromSpecificToGeneral: true, defaultResult: "voordeelgordijnen"),
@@ -377,7 +507,6 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
                                 Value = Math.Round(taxes, 2)
                             }
                         });
-
                         break;
                     }
                     default:
