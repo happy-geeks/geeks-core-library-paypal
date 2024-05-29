@@ -83,7 +83,7 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
                     ActionData = failUrl
                 };
             }
-        
+
             // Build and execute payment request.
             baseUrl = gclSettings.Environment.InList(Environments.Development, Environments.Test) ? "https://api-m.sandbox.paypal.com/" : "https://api-m.paypal.com/";
             var restClient = CreateRestClient(payPalSettings, baseUrl);
@@ -159,7 +159,7 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
                     StatusCode = statusCode
                 };
             }
-            
+
             var paypalVerifyRequestJsonString = $@"{{
 		        ""transmission_id"": ""{httpContextAccessor.HttpContext.Request.Headers["PAYPAL-TRANSMISSION-ID"].ToString()}"",
 		        ""transmission_time"": ""{httpContextAccessor.HttpContext.Request.Headers["PAYPAL-TRANSMISSION-TIME"].ToString()}"",
@@ -169,7 +169,7 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
 		        ""webhook_id"": ""{webhookId}"",
 		        ""webhook_event"": {webHookContents}
 	        }}";
-            
+
             var payPalSettings = (PayPalSettingsModel)paymentMethodSettings.PaymentServiceProvider;
             if (string.IsNullOrEmpty(baseUrl))
             {
@@ -181,7 +181,7 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
             var restResponse = await restClient.ExecuteAsync(restRequest);
             statusCode = (int)restResponse.StatusCode;
             responseBody = restResponse.Content;
-        
+
             if (String.IsNullOrEmpty(responseBody))
             {
                 error = "No response received from PayPal.";
@@ -237,7 +237,7 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
                     StatusCode = statusCode
                 };
             }
-            
+
             return new StatusUpdateResult
             {
                 Successful = responseJson.VerificationStatus.Equals("SUCCESS", StringComparison.OrdinalIgnoreCase),
@@ -282,7 +282,7 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
         LEFT JOIN {WiserTableNames.WiserItemDetail} AS webhookIdLive ON webhookIdLive.item_id = paymentServiceProvider.id AND webhookIdLive.`key` = '{PayPalConstants.WebhookIdLive}'
         LEFT JOIN {WiserTableNames.WiserItemDetail} AS webhookIdTest ON webhookIdTest.item_id = paymentServiceProvider.id AND webhookIdTest.`key` = '{PayPalConstants.WebhookIdTest}'
         WHERE paymentServiceProvider.id = ?id";
-        
+
         try
         {
             var result = new PayPalSettingsModel
@@ -329,7 +329,7 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
             {
                 throw new Exception("No HTTP context available.");
             }
-            
+
             using StreamReader reader = new(httpContextAccessor.HttpContext.Request.Body);
             webHookContents = await reader.ReadToEndAsync();
             if (String.IsNullOrWhiteSpace(webHookContents))
@@ -355,7 +355,7 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
             throw;
         }
     }
-    
+
     private static RestClient CreateRestClient(PayPalSettingsModel payPalSettings, string baseUrl)
     {
         return new RestClient(new RestClientOptions(baseUrl)
@@ -363,7 +363,7 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
             Authenticator = new HttpBasicAuthenticator(payPalSettings.ClientId, payPalSettings.Secret),
         });
     }
-    
+
     private (bool Valid, string Message) ValidatePayPalSettings(PayPalSettingsModel payPalSettings)
     {
         if (String.IsNullOrEmpty(payPalSettings.ClientId) || String.IsNullOrEmpty(payPalSettings.Secret))
@@ -373,7 +373,7 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
 
         return (true, null);
     }
-    
+
     private async Task<RestRequest> CreateRestRequestAsync(PayPalSettingsModel payPalSettings, string invoiceNumber, ICollection<(WiserItemModel Main, List<WiserItemModel> Lines)> conceptOrders)
     {
         var restRequest = new RestRequest("/v2/checkout/orders", Method.Post);
@@ -393,7 +393,7 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
                     BirthDate = conceptOrders.FirstOrDefault().Main.GetDetailValue<DateTime>(PayPalConstants.BirthDate) == DateTime.MinValue ? conceptOrders.FirstOrDefault().Main.GetDetailValue<DateTime>(PayPalConstants.BirthDate) : null,
                     ExperienceContext = new ExperienceContextModel
                     {
-                        BrandName = await objectsService.FindSystemObjectByDomainNameAsync("PayPal_BrandName", searchFromSpecificToGeneral: true, defaultResult: "voordeelgordijnen"),
+                        BrandName = await objectsService.FindSystemObjectByDomainNameAsync("PayPal_BrandName", searchFromSpecificToGeneral: true),
                         Locale = await objectsService.FindSystemObjectByDomainNameAsync("PayPal_Locale", searchFromSpecificToGeneral: true, defaultResult: "nl-NL"),
                         LandingPage = await objectsService.FindSystemObjectByDomainNameAsync("PayPal_LandingPage", searchFromSpecificToGeneral: true, defaultResult: "NO_PREFERENCE"),
                         ShippingPreference = await objectsService.FindSystemObjectByDomainNameAsync("PayPal_ShippingPreference", searchFromSpecificToGeneral: true, defaultResult: "SET_PROVIDED_ADDRESS"),
@@ -405,13 +405,13 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
             },
             PurchaseUnits = new List<PurchaseUnitModel>()
         };
-        
+
         var basketSettings = await shoppingBasketsService.GetSettingsAsync();
-        
+
         foreach (var conceptOrder in conceptOrders)
         {
             var hasShippingAddress = !String.IsNullOrWhiteSpace(conceptOrder.Main.GetDetailValue<string>(PayPalConstants.ShippingPostalCode));
-            
+
             var totalPrice = await shoppingBasketsService.GetPriceAsync(conceptOrder.Main, conceptOrder.Lines, basketSettings, ShoppingBasket.PriceTypes.PspPriceInVat);
             var purchaseUnit = new PurchaseUnitModel
             {
@@ -463,7 +463,7 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
                 },
                 Items = new List<ItemModel>()
             };
-            
+
             payPalCreateOrderRequest.PurchaseUnits.Add(purchaseUnit);
             foreach (var orderLine in conceptOrder.Lines)
             {
@@ -471,7 +471,7 @@ public class PayPalService : PaymentServiceProviderBaseService, IPaymentServiceP
                 var lineType = orderLine.GetDetailValue("type");
                 var linePriceExcludingTaxes = await shoppingBasketsService.GetLinePriceAsync(conceptOrder.Main, orderLine, basketSettings, ShoppingBasket.PriceTypes.ExVatExDiscount, true);
                 var linePriceIncludingTaxes = await shoppingBasketsService.GetLinePriceAsync(conceptOrder.Main, orderLine, basketSettings, ShoppingBasket.PriceTypes.InVatExDiscount, true);
-                
+
                 switch (lineType.ToUpperInvariant())
                 {
                     case "COUPON":
