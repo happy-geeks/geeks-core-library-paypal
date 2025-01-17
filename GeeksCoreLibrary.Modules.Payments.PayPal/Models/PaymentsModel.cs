@@ -7,5 +7,5 @@ public class PaymentsModel
 {
     [JsonProperty("captures")]
     [JsonPropertyName("captures")]
-    public List<CaptureModel> Captures { get; set; }
+    public List<CaptureModel> Captures { get; set; } = [];
 }

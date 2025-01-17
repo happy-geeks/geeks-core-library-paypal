@@ -7,8 +7,9 @@ public class SellerProtectionModel
 {
     [JsonProperty("status")]
     [JsonPropertyName("status")]
-    public string Status { get; set; }
+    public string? Status { get; set; }
+
     [JsonProperty("dispute_categories")]
     [JsonPropertyName("dispute_categories")]
-    public List<string> DisputeCategories { get; set; }
+    public List<string> DisputeCategories { get; set; } = [];
 }

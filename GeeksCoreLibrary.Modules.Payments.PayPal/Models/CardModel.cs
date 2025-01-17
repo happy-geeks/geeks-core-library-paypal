@@ -7,8 +7,9 @@ public class CardModel
 {
     [JsonProperty("level_2")]
     [JsonPropertyName("level_2")]
-    public Level2Model Level2 { get; set; }
+    public Level2Model Level2 { get; set; } = new();
+
     [JsonProperty("level_3")]
     [JsonPropertyName("level_3")]
-    public Level3Model Level3 { get; set; }
+    public Level3Model Level3 { get; set; } = new();
 }

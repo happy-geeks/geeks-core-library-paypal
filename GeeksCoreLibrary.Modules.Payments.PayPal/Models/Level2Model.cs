@@ -7,8 +7,9 @@ public class Level2Model
 {
     [JsonProperty("invoice_id")]
     [JsonPropertyName("invoice_id")]
-    public string InvoiceId { get; set; }
+    public string? InvoiceId { get; set; }
+
     [JsonProperty("tax_total")]
     [JsonPropertyName("tax_total")]
-    public AmountModel TaxTotal{ get; set; }
+    public AmountModel TaxTotal { get; set; } = new();
 }

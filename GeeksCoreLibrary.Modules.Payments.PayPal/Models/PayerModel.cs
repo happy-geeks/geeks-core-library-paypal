@@ -7,11 +7,13 @@ public class PayerModel
 {
     [JsonProperty("name")]
     [JsonPropertyName("name")]
-    public NameModel Name { get; set; }
+    public NameModel Name { get; set; } = new();
+
     [JsonProperty("email_address")]
     [JsonPropertyName("email_address")]
-    public string EmailAddress { get; set; }
+    public string? EmailAddress { get; set; }
+
     [JsonProperty("payer_id")]
     [JsonPropertyName("payer_id")]
-    public string PayerId { get; set; }
+    public string? PayerId { get; set; }
 }

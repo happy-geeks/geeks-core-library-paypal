@@ -7,26 +7,33 @@ public class ItemModel
 {
     [JsonProperty("name")]
     [JsonPropertyName("name")]
-    public string Name { get; set; }
+    public string? Name { get; set; }
+
     [JsonProperty("description")]
     [JsonPropertyName("description")]
-    public string Description { get; set; }
+    public string? Description { get; set; }
+
     [JsonProperty("sku")]
     [JsonPropertyName("sku")]
-    public string Sku { get; set; }
+    public string? Sku { get; set; }
+
     [JsonProperty("url")]
     [JsonPropertyName("url")]
-    public string Url { get; set; }
+    public string? Url { get; set; }
+
     [JsonProperty("unit_amount")]
     [JsonPropertyName("unit_amount")]
-    public AmountModel UnitAmount { get; set; }
+    public AmountModel UnitAmount { get; set; } = new();
+
     [JsonProperty("tax")]
     [JsonPropertyName("tax")]
-    public AmountModel Tax { get; set; }
+    public AmountModel Tax { get; set; } = new();
+
     [JsonProperty("quantity")]
     [JsonPropertyName("quantity")]
     public int Quantity { get; set; }
+
     [JsonProperty("category")]
     [JsonPropertyName("category")]
-    public string Category { get; set; }
+    public string? Category { get; set; }
 }

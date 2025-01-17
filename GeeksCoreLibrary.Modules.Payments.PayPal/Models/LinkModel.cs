@@ -7,11 +7,13 @@ public class LinkModel
 {
     [JsonProperty("href")]
     [JsonPropertyName("href")]
-    public string Href { get; set; }
+    public string? Href { get; set; }
+
     [JsonProperty("rel")]
     [JsonPropertyName("rel")]
-    public string Rel { get; set; }
+    public string? Rel { get; set; }
+
     [JsonProperty("method")]
     [JsonPropertyName("method")]
-    public string Method { get; set; }
+    public string? Method { get; set; }
 }

@@ -7,35 +7,45 @@ public class PurchaseUnitModel
 {
     [JsonProperty("reference_id")]
     [JsonPropertyName("reference_id")]
-    public string ReferenceId { get; set; }
+    public string? ReferenceId { get; set; }
+
     [JsonProperty("description")]
     [JsonPropertyName("description")]
-    public string Description { get; set; }
+    public string? Description { get; set; }
+
     [JsonProperty("custom_id")]
     [JsonPropertyName("custom_id")]
-    public string CustomId { get; set; }
+    public string? CustomId { get; set; }
+
     [JsonProperty("soft_descriptor")]
     [JsonPropertyName("soft_descriptor")]
-    public string SoftDescriptor { get; set; }
+    public string? SoftDescriptor { get; set; }
+
     [JsonProperty("invoice_id")]
     [JsonPropertyName("invoice_id")]
-    public string InvoiceId { get; set; }
+    public string? InvoiceId { get; set; }
+
     [JsonProperty("supplementary_data")]
     [JsonPropertyName("supplementary_data")]
-    public SupplementaryDataModel SupplementaryData { get; set; }
+    public SupplementaryDataModel SupplementaryData { get; set; } = new();
+
     [JsonProperty("amount")]
     [JsonPropertyName("amount")]
-    public AmountModel Amount { get; set; }
+    public AmountModel Amount { get; set; } = new();
+
     [JsonProperty("items")]
     [JsonPropertyName("items")]
-    public List<ItemModel> Items { get; set; }
+    public List<ItemModel> Items { get; set; } = [];
+
     [JsonProperty("shipping")]
     [JsonPropertyName("shipping")]
-    public ShippingModel Shipping { get; set; }
+    public ShippingModel Shipping { get; set; } = new();
+
     [JsonProperty("payee")]
     [JsonPropertyName("payee")]
-    public PayerModel Payee { get; set; }
+    public PayerModel Payee { get; set; } = new();
+
     [JsonProperty("payments")]
     [JsonPropertyName("payments")]
-    public PaymentsModel Payments { get; set; }
+    public PaymentsModel Payments { get; set; } = new();
 }

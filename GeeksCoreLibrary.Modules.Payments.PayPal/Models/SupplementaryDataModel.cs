@@ -7,5 +7,5 @@ public class SupplementaryDataModel
 {
     [JsonProperty("card")]
     [JsonPropertyName("card")]
-    public CardModel Card { get; set; }
+    public CardModel Card { get; set; } = new();
 }

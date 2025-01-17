@@ -7,5 +7,5 @@ public class VerifyWebhookResponseModel
 {
     [JsonProperty("verification_status")]
     [JsonPropertyName("verification_status")]
-    public string VerificationStatus { get; set; }
+    public string? VerificationStatus { get; set; }
 }

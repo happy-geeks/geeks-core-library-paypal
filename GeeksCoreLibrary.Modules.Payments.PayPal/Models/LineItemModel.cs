@@ -7,32 +7,41 @@ public class LineItemModel
 {
     [JsonProperty("name")]
     [JsonPropertyName("name")]
-    public string Name { get; set; }
+    public string? Name { get; set; }
+
     [JsonProperty("description")]
     [JsonPropertyName("description")]
-    public string Description { get; set; }
+    public string? Description { get; set; }
+
     [JsonProperty("upc")]
     [JsonPropertyName("upc")]
-    public UpcModel Upc { get; set; }
+    public UpcModel Upc { get; set; } = new();
+
     [JsonProperty("unit_amount")]
     [JsonPropertyName("unit_amount")]
-    public AmountModel UnitAmount { get; set; }
+    public AmountModel UnitAmount { get; set; } = new();
+
     [JsonProperty("tax")]
     [JsonPropertyName("tax")]
-    public AmountModel Tax { get; set; }
+    public AmountModel Tax { get; set; } = new();
+
     [JsonProperty("discount_amount")]
     [JsonPropertyName("discount_amount")]
-    public AmountModel DiscountAmount { get; set; }
+    public AmountModel DiscountAmount { get; set; } = new();
+
     [JsonProperty("total_amount")]
     [JsonPropertyName("total_amount")]
-    public AmountModel TotalAmount { get; set; }
+    public AmountModel TotalAmount { get; set; } = new();
+
     [JsonProperty("unit_of_measure")]
     [JsonPropertyName("unit_of_measure")]
-    public string UnitOfMeasure { get; set; }
+    public string? UnitOfMeasure { get; set; }
+
     [JsonProperty("quantity")]
     [JsonPropertyName("quantity")]
     public int Quantity { get; set; }
+
     [JsonProperty("commodity_code")]
     [JsonPropertyName("commodity_code")]
-    public string CommodityCode { get; set; }
+    public string? CommodityCode { get; set; }
 }

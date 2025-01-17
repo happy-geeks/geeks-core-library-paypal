@@ -10,7 +10,7 @@ public class NameModel
     // </summary>
     [JsonProperty("given_name")]
     [JsonPropertyName("given_name")]
-    public string GivenName { get; set; }
+    public string? GivenName { get; set; }
 
     // <summary>
     // When the party is a person, the party's surname or family name. Also known as the last name.
@@ -18,5 +18,5 @@ public class NameModel
     // </summary>
     [JsonProperty("surname")]
     [JsonPropertyName("surname")]
-    public string Surname { get; set; }
+    public string? Surname { get; set; }
 }

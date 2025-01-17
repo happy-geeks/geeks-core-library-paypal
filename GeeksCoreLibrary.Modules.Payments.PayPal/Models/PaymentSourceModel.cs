@@ -7,8 +7,9 @@ public class PaymentSourceModel
 {
     [JsonProperty("paypal")]
     [JsonPropertyName("paypal")]
-    public PaymentSourcePayPalModel PayPal { get; set; }
+    public PaymentSourcePayPalModel PayPal { get; set; } = new();
+
     [JsonProperty("resource")]
     [JsonPropertyName("resource")]
-    public PaymentSourcePayPalModel Resource { get; set; }
+    public PaymentSourcePayPalModel Resource { get; set; } = new();
 }

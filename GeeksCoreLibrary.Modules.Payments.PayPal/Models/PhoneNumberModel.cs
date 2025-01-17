@@ -1,5 +1,5 @@
 using System.Text.Json.Serialization;
-using Newtonsoft.Json; 
+using Newtonsoft.Json;
 
 namespace GeeksCoreLibrary.Modules.Payments.PayPal.Models;
 
@@ -12,5 +12,5 @@ public class PhoneNumberModel
     /// </summary>
     [JsonProperty("national_number")]
     [JsonPropertyName("national_number")]
-    public string NationalNumber { get; set; }
+    public string? NationalNumber { get; set; }
 }

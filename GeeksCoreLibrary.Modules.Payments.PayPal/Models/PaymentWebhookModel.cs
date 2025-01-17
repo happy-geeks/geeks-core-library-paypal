@@ -7,5 +7,5 @@ public class PaymentWebhookModel : BaseWebhookModel
 {
     [JsonProperty("resource")]
     [JsonPropertyName("resource")]
-    public new PaymentModel Resource { get; set; }
+    public PaymentModel Resource { get; set; } = new();
 }
